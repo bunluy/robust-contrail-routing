@@ -4,7 +4,7 @@
 
 This project studies that question computationally, using real ERA5 atmospheric reanalysis data and the open-source contrail model [pycontrails](https://py.contrails.org). It is being developed in stages, from basic contrail modelling towards contrail-aware and, eventually, uncertainty-robust route selection.
 
-> **Status:** Sessions 1–3 complete (modelling baseline, along-track variation, candidate routes and altitude sweep). Next: defining a routing objective that trades contrail exposure against operational cost.
+> **Status:** Sessions 1–6 complete: candidate routes, fuel vs contrail trade-off (Poll–Schumann aircraft performance model), and robustness to humidity, position and timing errors. Findings are currently being tested further; a full write-up will follow. The results below are from Session 3.
 
 ---
 
@@ -154,5 +154,5 @@ Notes:
 
 ## Author
 
-Baris Unluyildiz, BEng Aerospace Engineering, University of Manchester
+Independent project by Baris Unluyildiz, BEng Aerospace Engineering student at the University of Manchester.
 [LinkedIn](https://www.linkedin.com/in/baris-unluyildiz/)
