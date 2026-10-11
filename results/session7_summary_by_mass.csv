@@ -1,0 +1,5 @@
+mass_case,n_candidates,min_fuel_route,its_pcr_base_km,its_pcr_worst_km,cheapest_always_clean,extra_fuel_for_always_clean_kg
+light_56t,30,GC0_FL390,0.0,0.0,GC0_FL390,0.0
+model_default,30,GC0_FL380,0.0,55.200084020369076,GC0_FL390,2.471738266133798
+heavy_68t,30,GC0_FL370,0.0,345.0000078401012,GC0_FL390,50.143807969100635
+very_heavy_72t,25,GC0_FL350,993.6001713650089,1021.2000319940184,,
