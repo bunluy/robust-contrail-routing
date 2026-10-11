@@ -50,6 +50,7 @@ def evaluate_route(flight, met, aircraft_type=None, true_airspeed_ms=None,
     df["leg_km"] = np.append(haversine_km(lon[:-1], lat[:-1], lon[1:], lat[1:]), 0.0)
 
     if aircraft_type is not None:
+        out.attrs.pop("engine_efficiency", None)
         out.attrs["aircraft_type"] = aircraft_type
         out["true_airspeed"] = np.full(len(out), float(true_airspeed_ms))
         perf = PSFlight().eval(source=out)

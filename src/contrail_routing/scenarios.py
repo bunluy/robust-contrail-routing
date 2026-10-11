@@ -25,15 +25,22 @@ def shift_field(met, east_km=0.0, north_km=0.0, hours=0, up_m=0.0, ref_lat=50.0)
     east_km / north_km > 0 move features east / north (converted to degrees
     at ref_lat, so the true distance varies slightly with latitude).
     hours = -1 means the weather arrives one hour early.
-    up_m > 0 moves the field up (e.g. a higher tropopause and moist layer).
+    up_m > 0 moves the field up (e.g. a higher tropopause and moist layer);
+    temperature and relative humidity move with the air.
     """
     ds = met.data if isinstance(met, MetDataset) else met
     derived = [c for c in ("air_pressure", "altitude") if c in ds.coords]
+    factor = np.exp(-up_m / SCALE_HEIGHT_M)    # new pressure / old pressure
+    if up_m != 0.0 and "specific_humidity" in ds:
+        # Relabelling levels moves each air parcel to a new pressure. Vapour
+        # pressure is proportional to q * p, so q is divided by the same
+        # factor to keep relative humidity unchanged (a pure displacement).
+        ds = ds.assign(specific_humidity=ds["specific_humidity"] / factor)
     out = ds.drop_vars(derived).assign_coords(
         longitude=ds["longitude"].values + east_km / km_per_deg_lon(ref_lat),
         latitude=ds["latitude"].values + north_km / KM_PER_DEG_LAT,
         time=ds["time"].values + np.timedelta64(int(hours), "h"),
-        level=ds["level"].values * np.exp(-up_m / SCALE_HEIGHT_M),
+        level=ds["level"].values * factor,
     )
     return MetDataset(out)
 
