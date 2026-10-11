@@ -71,3 +71,13 @@ def test_coverage_flags_route_outside_shifted_levels(route):
     assert coverage(met, route)["ok"].all()
     far_up = shift_field(met, up_m=3000.0)   # 11 km now below the lowest level
     assert not coverage(far_up, route).loc["test", "level_ok"]
+
+
+def test_vertical_shift_keeps_relative_humidity(route):
+    """A pure displacement must move the air with its relative humidity unchanged."""
+    # Linear interpolation between levels alone gives ~0.5% error, so allow 1%;
+    # keeping specific humidity fixed instead would be off by ~9% at 600 m.
+    met = synthetic_met(rhi_value=0.8)
+    for dz in (600.0, -600.0):
+        df = evaluate_routes(route, shift_field(met, up_m=dz))["test"]
+        assert np.allclose(df["rhi"], 0.8, rtol=0.01), (dz, df["rhi"].min(), df["rhi"].max())
