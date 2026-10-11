@@ -32,3 +32,18 @@ def check_met_box(met, lon_range, lat_range):
     if n_nan:
         raise ValueError(f"Met data contains {n_nan} NaNs in this box:\n{df}")
     return df
+
+
+def load_region(met, lon_range, lat_range,
+                variables=("air_temperature", "specific_humidity")):
+    """
+    Cut a lon/lat region out of a (lazy, global) MetDataset and load it into
+    memory as a new MetDataset. Much faster to evaluate many routes against,
+    and the starting point for perturbed scenarios.
+    """
+    from pycontrails import MetDataset
+
+    ds = (met.data[list(variables)]
+          .sel(longitude=slice(*lon_range), latitude=slice(*lat_range))
+          .load())
+    return MetDataset(ds)
