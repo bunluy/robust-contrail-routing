@@ -1,158 +1,162 @@
 # robust-contrail-routing
 
-**How should an aircraft's route be chosen so that it avoids creating long-lasting contrails, without costing too much extra, when the weather data behind that choice is uncertain?**
+**How should an aircraft's cruise level and path be chosen to avoid creating persistent contrails, when the weather data behind that choice is uncertain, and what does planning for that uncertainty cost?**
 
-This project studies that question computationally, using real ERA5 atmospheric reanalysis data and the open-source contrail model [pycontrails](https://py.contrails.org). It is being developed in stages, from basic contrail modelling towards contrail-aware and, eventually, uncertainty-robust route selection.
+An independent case study using ERA5 atmospheric reanalysis, the open-source contrail model [pycontrails](https://py.contrails.org) and the Poll–Schumann aircraft performance model. It evaluates 45 candidate routes for an A320-class flight under 18 weather-error scenarios and compares deterministic and robust ways of choosing between them.
 
-> **Status:** Sessions 1–6 complete: candidate routes, fuel vs contrail trade-off (Poll–Schumann aircraft performance model), and robustness to humidity, position and timing errors. Findings are currently being tested further; a full write-up will follow. The results below are from Session 3.
+> **Status:** Sessions 1–7 complete. Next: a route planner that searches the airspace (graph search) instead of choosing from a fixed set of routes, and repeating the study on several dates. See [Roadmap](#roadmap).
+
+---
+
+## Main findings
+
+*Case study: a ~1,800 km night flight from (−10°, 45°) to (10°, 55°), 2022-03-01 00:00 UTC, A320, constant true airspeed 230 m/s, no wind.*
+
+**1. Avoidance has steeply diminishing returns.** When the aircraft is held at or below FL360, bending the path 150 km towards the dry side of the moist band cuts the distance flown in persistent-contrail conditions by 83% (400 → 69 km) for **1.6% extra fuel** (79 kg). Going further, to 41 km, costs another 237 kg: about 35 times more per kilometre avoided.
+
+![Contrail exposure vs extra fuel](results/figures/trade_off_fronts.png)
+
+**2. Aircraft weight decides whether there is a trade-off at all.** Heavier aircraft cruise most efficiently lower down, closer to or inside the moist layer:
+
+| Start-of-cruise mass | Most fuel-efficient level | Contrail exposure there |
+|---|---|---|
+| 56 t | FL390 | 0 km |
+| ≈64 t (model estimate) | FL380 | 0 km |
+| 68 t | FL370 | 0 km |
+| 72 t (near maximum) | FL350 | 994 km |
+
+![Fuel by flight level and mass, and exposure by flight level](results/figures/session7_fuel_by_mass_and_exposure.png)
+
+**3. Uncertainty in the *height* of the moist layer is what changes decisions.** Shifting the weather field up or down by 150–600 m changed which route the decision rules chose in 9 of 12 cases. Uniform humidity errors (1 of 9) and horizontal or timing shifts (1 of 18) rarely did. FL370 looked contrail-free, but only by a margin of less than 150 m.
+
+![Exposure vs vertical displacement of the weather field](results/figures/vertical_robustness.png)
+
+**4. Planning for that uncertainty is cheap when the aircraft can climb.** A robust choice (minimising the worst case across scenarios) costs +2.5 kg (0.05%) at the model's default mass and +50 kg (≈1%) at 68 t, both by cruising at FL390. A near-full aircraft (72 t) cannot reach FL390; its robust choice combines FL380 with a 150 km detour, for +125 kg (≈2.2%), cutting its worst-case exposure from 994 km to 83 km.
+
+These are results for **one flight on one night**. Whether they generalise is the subject of the next sessions.
 
 ---
 
 ## Why this matters
 
-Persistent contrails, the line-shaped clouds that sometimes spread and last for hours behind aircraft, are thought to be one of the largest contributors to aviation's climate effect. They form only in specific regions of cold, ice-supersaturated air, which are often thin and patchy. That means small changes to a flight's altitude or path can sometimes avoid them.
+Persistent contrails form in thin, patchy layers of cold, ice-supersaturated air and can spread into cirrus-like clouds lasting hours. Their warming effect is estimated to be comparable to that of aviation's CO₂ (Lee et al., 2021), which makes small altitude or path changes a potentially cheap way to reduce aviation's climate impact (Teoh et al., 2020).
 
-Two complications make this an engineering decision problem rather than a pure physics one:
+Two things make this an engineering decision problem rather than a physics one:
 
-1. **Avoidance has a cost.** Deviating from the planned route usually means extra distance, extra fuel and extra CO₂.
-2. **The atmosphere is uncertain.** Weather models, including ERA5, are known to have difficulty representing ice supersaturation. A route that appears to avoid contrails on paper may not do so in reality.
+1. **Avoidance has a cost:** more distance, more fuel, more CO₂.
+2. **The atmosphere is uncertain:** weather models struggle to locate ice-supersaturated air precisely, so a route that avoids contrails on paper may not do so in reality.
 
-Real-world trials (e.g. Google Research, Breakthrough Energy and American Airlines) have shown that contrail avoidance can work in operation. Reliable prediction of ice-supersaturated regions remains one of the main open problems, and that is the problem this project's "robust" stage addresses.
-
----
-
-## Headline result (Session 3)
-
-For a synthetic flight from (−10°, 45°) to (10°, 55°) on 2022-03-01, departing 00:00 UTC:
-
-| Option | Extra distance | Distance flown in persistent-contrail conditions |
-|---|---|---|
-| Great-circle route at 11,000 m (reference) | 0 km | **386 km** (21% of route) |
-| 150 km deviation to the north-west, 11,000 m | +30 km (+1.7%) | **69 km** |
-| 150 km deviation to the south-east, 11,000 m | +30 km (+1.7%) | **925 km** |
-| Great-circle route at 10,000 m | 0 km | **1,532 km** (85%) |
-| Great-circle route at 11,500 m | 0 km | **0 km** |
-
-- **Altitude was the strongest lever.** The supersaturated layer ended just below the tropopause, so climbing a few hundred metres removed all exposure in this case.
-- **Lateral deviation helped only towards the dry side** of a long SW–NE band of supersaturated air. Deviating the other way more than doubled exposure.
-- **The exact cut-off altitude is uncertain.** It falls between two ERA5 pressure levels, where values are interpolated. This is precisely the kind of uncertainty the later robust-routing stage is designed to handle.
-
-![Contrail exposure vs cruise altitude](results/figures/session3_altitude_sweep.png)
-
-![Candidate routes over the ice-supersaturation field](results/figures/session3_candidate_routes.png)
+Operational trials have shown avoidance can work. EUROCONTROL's Maastricht centre used vertical clearances of up to 2,000 ft and identified the precision of meteorological tools as a key challenge ([EUROCONTROL, 2021](https://www.eurocontrol.int/press-release/mitigating-climate-impact-non-co2-emissions)), and Google Research, Breakthrough Energy and American Airlines reported large reductions in observed contrails ([Google Research](https://sites.research.google/gr/contrails/)). This project studies the decision those trials face, on a small and fully transparent scale.
 
 ---
 
 ## Method
 
 ```
-synthetic aircraft trajectory
-  → ERA5 temperature and humidity (200–300 hPa) interpolated along the path
-  → pycontrails PCR model:
-       Schmidt–Appleman criterion (SAC): can a contrail form?
-       ice supersaturation (ISSR, RHi > 1): can it persist?
-       PCR = SAC and ISSR
-  → contrail-exposure metrics per route (km and fraction flown in PCR)
-  → comparison against an operational-cost proxy (extra distance)
+candidate route (lateral offset, flight level)
+  → ERA5 temperature and humidity (10 pressure levels, 175–300 hPa) along the path
+  → pycontrails PCR model
+       Schmidt–Appleman criterion: can a contrail form?
+       ice supersaturation (RHi > 1): can it persist?
+  → distance flown in persistent-contrail (PCR) conditions
+  → Poll–Schumann model: fuel burn for the route
+  → objective J = fuel + λ × PCR distance, over 18 weather-error scenarios
+  → deterministic vs worst-case vs minimax-regret route choice
 ```
 
-**Data:** ERA5 reanalysis via pycontrails' `ERA5ARCO` (Google's analysis-ready ERA5 store), temperature and specific humidity on 200, 225, 250, 275 and 300 hPa, hourly.
-
-**Routes (Session 3):** a fixed, symmetric family defined before any results were seen, so routes were not tuned to the data:
-- lateral: the great circle plus smooth deviations of ±150 km and ±300 km at mid-route
-- vertical: 10,000, 11,000 and 11,500 m, plus a 100 m-step altitude sweep from 9,400 to 11,700 m
-- constant cruise speed of 230 m/s, no wind, constant altitude per route
-
-**Key metric:** distance flown in persistent-contrail (PCR) conditions. This is used as a *proxy* for contrail climate impact. It indicates where persistent contrails can form, not how much warming they cause.
+- **Routes:** the great circle and smooth lateral deviations of ±150 and ±300 km, at FL310–FL390 (45 routes). The set was fixed before any results were seen, so routes are not tuned to the data.
+- **Uncertainty scenarios:** humidity scaled by −5% to +11%; the whole weather field displaced 50–100 km sideways, 100 km along-track or 1 h in time; and moved 150–600 m up or down.
+- **λ** is the fuel (kg) an operator would spend to avoid 1 km of contrail-forming flight. It is kept as an explicit setting (0.1, 1, 10 kg/km) because converting contrail distance to climate impact needs a contrail climate model, which is future work.
+- **Contrail metric:** distance in PCR conditions is a proxy for climate impact. It is more defensible here than in general because the flights are at night, when persistent contrails warm.
 
 ---
 
-## Sessions so far
+## Checks and corrections
 
-| Session | Question | Main finding |
+The project's own checks caught several errors; each is documented in the notebook where it was found, and the evidence is kept.
+
+| Problem | How it was caught | Fix |
 |---|---|---|
-| 1 | Does the modelling pipeline work? | 20-point flight over the English Channel: SAC met everywhere, no ice supersaturation, PCR = 0. A valid baseline. |
-| 2 | Does PCR vary along a trajectory? | Longer flight: 20 of 121 points in PCR, in one main segment, plus one marginal point. Many points sat within a few percent of saturation, a first sign of sensitivity to humidity error. |
-| 3 | How much does route choice change exposure? | Altitude was decisive and lateral deviation helped only towards the dry side. See the headline result above. |
+| A cached ERA5 hour came back empty (twice) | Missing-value check before every evaluation | Cache file rebuilt; now automatic (`load_era5_checked`) |
+| Relative humidity over water was read as if over ice | Recomputed RHi did not match the ISSR flag | RHi computed explicitly and checked against ISSR |
+| First synthetic flight was ~3× too slow | Sanity check of speed | Realistic 230 m/s; exposure changed from 317 to 800 km |
+| "Direct" route was not the shortest path | Left/right route lengths were asymmetric | Routes rebuilt around the great circle |
+| Fuel model used a fixed engine efficiency left by the contrail model | New fuel code disagreed with the old by up to 171 kg | Fixed; Sessions 4–6 decisions recomputed (none changed) |
+| Vertical shift also changed humidity | Physically implausible result | Relative humidity now moves with the air; covered by a test |
 
----
-
-## Data quality and corrections
-
-These are recorded deliberately; catching and documenting them is part of the work.
-
-- **Missing ERA5 hour (Session 2).** The first data load returned all-NaN fields at 04:00 UTC, which silently affected 40 flight points. An explicit NaN check caught it. The corrupted cache file was regenerated and the results verified unchanged elsewhere. A NaN guard now runs before every evaluation.
-- **Humidity variable (Session 1).** pycontrails' `rh` output is relative humidity over *liquid water*. Ice supersaturation is defined over *ice* (RHi). RHi is now computed explicitly and validated against the model's ISSR flag.
-- **Flight speed (Session 2 → 3).** Session 2's synthetic flight was unrealistically slow (~84 m/s). At a realistic 230 m/s, exposure along the same line changed from 317 km to 800 km, because the flight met the atmosphere at different times.
-- **Route geometry (Session 3).** The first route family used straight lines on a flat map, which are not the shortest path. It was rebuilt around the great circle, and the original results are kept as `*_v1_flatframe` files.
-- **Humidity scaling.** ERA5 is known to under-represent ice supersaturation, and pycontrails recommends humidity scaling for ECMWF data. The baseline is deliberately unscaled. Scaling will be introduced as part of the uncertainty analysis, not used to tune results.
+The package has **18 automated tests**, including PCR on artificial dry and supersaturated atmospheres, route geometry, the decision rules and the cache repair. Run them with `python -m pytest`.
 
 ---
 
 ## Limitations
 
-- One date, one departure time, one synthetic city pair
-- No wind, no climb or descent, constant cruise altitude per route
-- Operational cost is currently extra distance only. The fuel cost of flying at a non-optimal altitude is not yet modelled, so altitude changes currently appear "free".
-- PCR is a proxy for contrail impact, not a radiative-forcing or climate calculation
-- Vertical resolution near the tropopause is limited to the five ERA5 pressure levels loaded
+- One city pair (synthetic endpoints), one date and one departure time.
+- Cruise only: the extra fuel to climb to higher levels is not included, which favours high levels.
+- Constant true airspeed rather than constant Mach number; no wind.
+- Scenario sizes are sensitivity cases, not calibrated estimates of ERA5 error, and are weighted equally.
+- PCR distance is a proxy for climate impact, not a radiative-forcing calculation.
+- ERA5 humidity is used unscaled in the base case; ERA5 is known to under-represent ice supersaturation.
 
 ---
 
 ## Roadmap
 
-- [x] Persistent-contrail modelling baseline
-- [x] Spatial and temporal variation along a trajectory
-- [x] Candidate routes and contrail-exposure metrics
-- [ ] Routing objective: contrail exposure vs operational cost, including an altitude/fuel penalty
-- [ ] Deterministic contrail-aware route comparison
-- [ ] Atmospheric uncertainty: humidity scaling and perturbations, finer vertical resolution
-- [ ] Robust routing: routes that remain good across plausible atmospheric scenarios
-- [ ] Comparison of deterministic and robust route choices, and trade-off analysis
+- [x] Persistent-contrail modelling baseline and along-track variation (Sessions 1–2)
+- [x] Candidate routes and altitude sweep (Session 3)
+- [x] Fuel model, Pareto fronts and routing objective (Session 4)
+- [x] Robustness to humidity, position and timing errors (Sessions 5–6)
+- [x] Vertical resolution, vertical errors and aircraft mass (Session 7)
+- [ ] Route planner: gridded contrail maps and a graph search over the airspace
+- [ ] Robust planner, and the same study on several dates and real city pairs
+- [ ] Short technical report
+
+**Future work, beyond this project:** a contrail climate model (pycontrails' CoCiP) to turn λ into a physical quantity; ERA5's 10-member ensemble as a real measure of weather uncertainty; wind and climb phases.
 
 ---
 
 ## Repository structure
 
 ```
+src/contrail_routing/      package: geometry, met (ERA5 loading and repair), evaluate (PCR),
+                           performance (fuel), scenarios, decisions, config
+tests/                     automated tests (pytest)
 notebooks/
-  01_pycontrails_hello_world.ipynb   Sessions 1–2: baseline PCR, along-track variation
-  02_candidate_routes.ipynb          Session 3: field maps, route family, altitude sweep
-results/
-  session2_*.csv                     along-track results and PCR segments
-  session3_*.csv                     route metrics, along-track results, altitude sweep
-  figures/                           saved figures used in this README
+  01_baseline_and_along_track_pcr.ipynb   Sessions 1-2
+  02_candidate_routes.ipynb               Session 3
+  03_routing_objective.ipynb              Session 4
+  04_humidity_uncertainty.ipynb           Session 5
+  05_position_errors.ipynb                Session 6
+  06_vertical_and_mass.ipynb              Session 7 (and corrected Session 4-6 fuel)
+results/                   CSV outputs per session; figures/ holds all figures
 ```
-
----
 
 ## Reproducing
 
-Developed with Python 3.13 on Windows.
+Developed with Python 3.13 on Windows; `requirements.txt` lists the key packages and versions (`requirements-lock-windows.txt` is the exact environment).
 
 ```bash
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
-.venv\Scripts\python.exe -m ipykernel install --user --name robust-contrail-routing --display-name "Python (robust-contrail-routing)"
+.venv\Scripts\python.exe -m pytest
 ```
 
-Then open the notebooks in Jupyter with the `Python (robust-contrail-routing)` kernel and run them top to bottom.
-
-Notes:
-- The first ERA5 load downloads data and converts it from ERA5's 137 model levels to pressure levels, one hour at a time. This takes several minutes and is cached on disk afterwards. Keep the disk cache enabled. Loading without it attempts the whole conversion in memory and can exceed the RAM of a typical laptop.
-- `gcsfs` is pinned to `2025.9.0` because newer versions caused an authentication error with anonymous access to the ERA5 store.
+The first ERA5 download per configuration takes 10–20 minutes and is cached on disk afterwards. Keep the cache enabled: without it, converting ERA5's 137 model levels to pressure levels happens in memory and exceeds a typical laptop's RAM.
 
 ---
 
-## Acknowledgements
+## References
 
-- [pycontrails](https://github.com/contrailcirrus/pycontrails), developed by Breakthrough Energy and Imperial College London
-- ERA5 reanalysis: Hersbach et al. (2020), Copernicus Climate Change Service. Contains modified Copernicus Climate Change Service information.
-- ERA5 accessed through Google's Analysis-Ready, Cloud-Optimized (ARCO) ERA5 dataset
+- Hersbach, H. et al. (2020). The ERA5 global reanalysis. *Quarterly Journal of the Royal Meteorological Society*, 146, 1999–2049.
+- Lee, D. S. et al. (2021). The contribution of global aviation to anthropogenic climate forcing for 2000 to 2018. *Atmospheric Environment*, 244, 117834.
+- Poll, D. I. A. and Schumann, U. (2021). An estimation method for the fuel burn and other performance characteristics of civil transport aircraft in the cruise. *The Aeronautical Journal*, 125.
+- Schumann, U. (1996). On conditions for contrail formation from aircraft exhausts. *Meteorologische Zeitschrift*, 5, 4–23.
+- Teoh, R. et al. (2020). Mitigating the climate forcing of aircraft contrails by small-scale diversions and technology adoption. *Environmental Science & Technology*, 54, 2941–2950.
+- [pycontrails](https://github.com/contrailcirrus/pycontrails) (v0.63.3), Breakthrough Energy and Imperial College London.
+- ERA5 accessed through Google's Analysis-Ready, Cloud-Optimized ERA5 dataset. Contains modified Copernicus Climate Change Service information.
 
 ---
 
 ## Author
 
 Independent project by Baris Unluyildiz, BEng Aerospace Engineering student at the University of Manchester.
-[LinkedIn](https://www.linkedin.com/in/baris-unluyildiz/)
+[LinkedIn](https://www.linkedin.com/in/baris-unluyildiz/) · Released under the MIT License.
