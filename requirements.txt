@@ -1,0 +1,10 @@
+pycontrails==0.63.3
+gcsfs==2025.9.0
+numpy==2.5.2
+pandas==3.0.5
+xarray==2026.7.0
+netCDF4==1.7.4
+matplotlib==3.11.2
+jupyter
+ipykernel
+pytest
