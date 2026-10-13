@@ -6,36 +6,38 @@
 
 An independent case study using ERA5 atmospheric reanalysis, the open-source contrail model [pycontrails](https://py.contrails.org) and the Poll–Schumann aircraft performance model. It evaluates 45 candidate routes for an A320-class flight under 18 weather-error scenarios and compares deterministic and robust ways of choosing between them.
 
-> **Status:** Sessions 1–7 complete. Next: a route planner that searches the airspace (graph search) instead of choosing from a fixed set of routes, and repeating the study on several dates. See [Roadmap](#roadmap).
+> **Status:** Sessions 1–8 complete. One night (2022-03-01) studied in detail, then the analysis repeated on 24 nights of 2022. Next: checking the weather-error assumptions against humidity measured on board airliners (IAGOS). See [Roadmap](#roadmap).
 
 ---
 
 ## Main findings
 
-*Case study: a ~1,800 km night flight from (−10°, 45°) to (10°, 55°), 2022-03-01 00:00 UTC, A320, constant true airspeed 230 m/s, no wind.*
+*Case study: a ~1,800 km night flight from (−10°, 45°) to (10°, 55°), A320, constant true airspeed 230 m/s, no wind, 45 candidate routes. Repeated on 24 nights of 2022 (the 1st and 15th of each month, 00:00 UTC), a rule fixed before any results were seen; 2022-03-01 is studied in the most detail.*
 
-**1. Avoidance has steeply diminishing returns.** When the aircraft is held at or below FL360, bending the path 150 km towards the dry side of the moist band cuts the distance flown in persistent-contrail conditions by 83% (400 → 69 km) for **1.6% extra fuel** (79 kg). Going further, to 41 km, costs another 237 kg: about 35 times more per kilometre avoided.
+**1. Persistent-contrail conditions at cruise levels are common, and their height changes from night to night.** Every night had persistent-contrail (PCR) conditions on at least one route. On all six summer nights they reached FL370 or higher; on no spring night did they rise above FL360; winter and autumn were mixed. Climbing is therefore not a universal fix: the great-circle route at FL390 was itself exposed on 6 nights.
 
-![Contrail exposure vs extra fuel](results/figures/trade_off_fronts.png)
+![Exposure on the great-circle route by flight level and night](results/figures/session8_exposure_by_night.png)
 
-**2. Aircraft weight decides whether there is a trade-off at all.** Heavier aircraft cruise most efficiently lower down, closer to or inside the moist layer:
+**2. Aircraft weight decides how often there is a trade-off.** Heavier aircraft cruise most efficiently lower down, closer to or inside the moist layer:
 
-| Start-of-cruise mass | Most fuel-efficient level | Contrail exposure there |
-|---|---|---|
-| 56 t | FL390 | 0 km |
-| ≈64 t (model estimate) | FL380 | 0 km |
-| 68 t | FL370 | 0 km |
-| 72 t (near maximum) | FL350 | 994 km |
+| Start-of-cruise mass | Most fuel-efficient level | Nights its route is exposed | ...or would be under a 150–600 m error in the layer's height |
+|---|---|---|---|
+| 56 t | FL390 | 6 of 24 | 11 of 24 |
+| ≈64 t (model estimate) | FL370–FL380 | 11 of 24 | 17 of 24 |
+| 68 t | FL360–FL370 | 12 of 24 | 19 of 24 |
+| 72 t (near maximum) | FL350–FL360 | 17 of 24 | 19 of 24 |
 
-![Fuel by flight level and mass, and exposure by flight level](results/figures/session7_fuel_by_mass_and_exposure.png)
+**3. Avoidance is often affordable, but its cost varies widely between nights.** At the model-estimate mass, cutting exposure by at least 80% cost a median 1.2% extra fuel (up to 4.8%; not possible on 1 night). With the aircraft held at or below FL360, it cost a median 4.3% (up to 13.1%; not possible on 3 of 15 nights). The single-night figure that started this (an 83% cut for 1.6% on 2022-03-01) was at the cheap end.
 
-**3. Uncertainty in the *height* of the moist layer is what changes decisions.** Shifting the weather field up or down by 150–600 m changed which route the decision rules chose in 9 of 12 cases. Uniform humidity errors (1 of 9) and horizontal or timing shifts (1 of 18) rarely did. FL370 looked contrail-free, but only by a margin of less than 150 m.
+![Contrail exposure vs extra fuel, 2022-03-01](results/figures/trade_off_fronts.png)
 
-![Exposure vs vertical displacement of the weather field](results/figures/vertical_robustness.png)
+**4. Uncertainty in the *height* of the moist layer changes route choices on most nights.** With the weather field shifted up or down by 150–600 m, deterministic, worst-case and minimum-regret rules chose different routes in 142 of 288 cases, on 19 of 24 nights. On 2022-03-01, height errors changed decisions far more often (9 of 12 cases) than uniform humidity errors (1 of 9) or horizontal and timing errors (1 of 18).
 
-**4. Planning for that uncertainty is cheap when the aircraft can climb.** A robust choice (minimising the worst case across scenarios) costs +2.5 kg (0.05%) at the model's default mass and +50 kg (≈1%) at 68 t, both by cruising at FL390. A near-full aircraft (72 t) cannot reach FL390; its robust choice combines FL380 with a 150 km detour, for +125 kg (≈2.2%), cutting its worst-case exposure from 994 km to 83 km.
+**5. A robust plan is usually cheap, but not always available.** The worst-case choice cost no extra fuel on a median night for every mass, and at most 1.6–6.3%. A route clear of contrail conditions under every height error existed on only 16 of 24 nights (13 for a 72 t aircraft); when it existed it cost a median 0–1.5% extra fuel, up to about 7%.
 
-These are results for **one flight on one night**. Whether they generalise is the subject of the next sessions.
+![Exposure of the minimum-fuel route and cost of a robust route, by mass](results/figures/session8_mass_and_robust_cost.png)
+
+These results cover one city pair, one departure time and one year, and the weather-error sizes are assumptions, not measurements. Testing those sizes against real data is the next step.
 
 ---
 
@@ -62,12 +64,13 @@ candidate route (lateral offset, flight level)
        ice supersaturation (RHi > 1): can it persist?
   → distance flown in persistent-contrail (PCR) conditions
   → Poll–Schumann model: fuel burn for the route
-  → objective J = fuel + λ × PCR distance, over 18 weather-error scenarios
+  → objective J = fuel + λ × PCR distance, over weather-error scenarios
   → deterministic vs worst-case vs minimax-regret route choice
+  → repeated on 24 nights
 ```
 
 - **Routes:** the great circle and smooth lateral deviations of ±150 and ±300 km, at FL310–FL390 (45 routes). The set was fixed before any results were seen, so routes are not tuned to the data.
-- **Uncertainty scenarios:** humidity scaled by −5% to +11%; the whole weather field displaced 50–100 km sideways, 100 km along-track or 1 h in time; and moved 150–600 m up or down.
+- **Uncertainty scenarios:** on 2022-03-01, 18 scenarios: humidity scaled by −5% to +11%; the whole weather field displaced 50–100 km sideways, 100 km along-track or 1 h in time; and moved 150–600 m up or down. On all 24 nights, the vertical shifts (the ones that changed decisions).
 - **λ** is the fuel (kg) an operator would spend to avoid 1 km of contrail-forming flight. It is kept as an explicit setting (0.1, 1, 10 kg/km) because converting contrail distance to climate impact needs a contrail climate model, which is future work.
 - **Contrail metric:** distance in PCR conditions is a proxy for climate impact. It is more defensible here than in general because the flights are at night, when persistent contrails warm.
 
@@ -86,16 +89,18 @@ The project's own checks caught several errors; each is documented in the notebo
 | Fuel model used a fixed engine efficiency left by the contrail model | New fuel code disagreed with the old by up to 171 kg | Fixed; Sessions 4–6 decisions recomputed (none changed) |
 | Vertical shift also changed humidity | Physically implausible result | Relative humidity now moves with the air; covered by a test |
 
-The package has **18 automated tests**, including PCR on artificial dry and supersaturated atmospheres, route geometry, the decision rules and the cache repair. Run them with `python -m pytest`.
+Each new step is also checked against the previous one: the multi-night code reproduces the single-night results exactly before it is run on other nights.
+
+The package has **20 automated tests**, including PCR on artificial dry and supersaturated atmospheres, route geometry, the decision rules and the cache repair. They run on GitHub on every push (badge at the top); locally, run `python -m pytest`.
 
 ---
 
 ## Limitations
 
-- One city pair (synthetic endpoints), one date and one departure time.
+- One city pair (synthetic endpoints), one departure time (00:00 UTC) and 24 nights of one year: too few for firm seasonal conclusions.
 - Cruise only: the extra fuel to climb to higher levels is not included, which favours high levels.
 - Constant true airspeed rather than constant Mach number; no wind.
-- Scenario sizes are sensitivity cases, not calibrated estimates of ERA5 error, and are weighted equally.
+- Scenario sizes are sensitivity cases, not calibrated estimates of ERA5 error, and are weighted equally. Only the vertical scenarios were repeated on all 24 nights.
 - PCR distance is a proxy for climate impact, not a radiative-forcing calculation.
 - ERA5 humidity is used unscaled in the base case; ERA5 is known to under-represent ice supersaturation.
 
@@ -108,11 +113,13 @@ The package has **18 automated tests**, including PCR on artificial dry and supe
 - [x] Fuel model, Pareto fronts and routing objective (Session 4)
 - [x] Robustness to humidity, position and timing errors (Sessions 5–6)
 - [x] Vertical resolution, vertical errors and aircraft mass (Session 7)
-- [ ] Route planner: gridded contrail maps and a graph search over the airspace
-- [ ] Robust planner, and the same study on several dates and real city pairs
+- [x] The same analysis on 24 nights of 2022 (Session 8)
+- [ ] How often does ERA5 miss ice supersaturation? A comparison with humidity measured on board airliners (IAGOS)
+- [ ] A statistical correction of ERA5 humidity giving a calibrated probability of ice supersaturation, compared with existing humidity scalings
+- [ ] Robust route choice with weather-error scenarios calibrated against those measurements
 - [ ] Short technical report
 
-**Future work, beyond this project:** a contrail climate model (pycontrails' CoCiP) to turn λ into a physical quantity; ERA5's 10-member ensemble as a real measure of weather uncertainty; wind and climb phases.
+**Future work, beyond this project:** a route planner that searches the airspace instead of a fixed route set; a contrail climate model (pycontrails' CoCiP) to turn λ into a physical quantity; ERA5's 10-member ensemble; wind, climb and real city pairs.
 
 ---
 
@@ -129,6 +136,8 @@ notebooks/
   04_humidity_uncertainty.ipynb           Session 5
   05_position_errors.ipynb                Session 6
   06_vertical_and_mass.ipynb              Session 7 (and corrected Session 4-6 fuel)
+  07_multiple_dates.ipynb                 Session 8: 24 nights of 2022
+scripts/download_era5_dates.py            downloads and checks ERA5 for the 24 nights
 results/                   CSV outputs per session; figures/ holds all figures
 ```
 
@@ -142,7 +151,7 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pytest
 ```
 
-The first ERA5 download per configuration takes 10–20 minutes and is cached on disk afterwards. Keep the cache enabled: without it, converting ERA5's 137 model levels to pressure levels happens in memory and exceeds a typical laptop's RAM.
+The first ERA5 download per configuration takes 10–20 minutes and is cached on disk afterwards; for notebook 07, run `scripts/download_era5_dates.py` first (about 2 hours and 13 GB for the 24 nights). Keep the cache enabled: without it, converting ERA5's 137 model levels to pressure levels happens in memory and exceeds a typical laptop's RAM.
 
 ---
 
