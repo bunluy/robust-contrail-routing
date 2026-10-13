@@ -15,6 +15,8 @@ LEVELS_FINE = [175, 190, 200, 210, 220, 230, 240, 250, 275, 300]  # Session 7 on
 REGION_LON = (-15.0, 15.0)
 REGION_LAT = (40.0, 60.0)
 
+# Session 8: dates fixed before any results were seen (1st and 15th of each month, 2022)
+STUDY_DATES = [f"2022-{m:02d}-{d:02d}" for m in range(1, 13) for d in (1, 15)]
 FLIGHT_LEVELS = [310, 320, 330, 340, 350, 360, 370, 380]
 OFFSETS_KM = [-300, -150, 0, 150, 300]
 
@@ -34,10 +36,12 @@ def route_specs(flight_levels=FLIGHT_LEVELS, offsets_km=OFFSETS_KM):
     }
 
 
-def build_routes(specs):
-    """{route name: Flight} for the case-study endpoints, departure and speed."""
+def build_routes(specs, departure=DEPARTURE):
+    """{route name: Flight} for the case-study endpoints and speed.
+    departure defaults to the Sessions 2-7 case; other dates give the same
+    routes shifted in time."""
     return {
         name: make_route(ORIGIN, DESTINATION, s["offset_km"], s["altitude_m"],
-                         DEPARTURE, CRUISE_SPEED_MS, name=name)
+                         departure, CRUISE_SPEED_MS, name=name)
         for name, s in specs.items()
     }
