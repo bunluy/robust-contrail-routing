@@ -6,7 +6,7 @@
 
 An independent case study using ERA5 atmospheric reanalysis, the open-source contrail model [pycontrails](https://py.contrails.org) and the Poll–Schumann aircraft performance model. It evaluates 45 candidate routes for an A320-class flight under 18 weather-error scenarios and compares deterministic and robust ways of choosing between them.
 
-> **Status:** Sessions 1–8 complete. One night (2022-03-01) studied in detail, then the analysis repeated on 24 nights of 2022. Next: checking the weather-error assumptions against humidity measured on board airliners (IAGOS). See [Roadmap](#roadmap).
+> **Status:** Sessions 1–9 complete. One night (2022-03-01) studied in detail, the analysis repeated on 24 nights of 2022, and a route planner compared with the fixed route set. Next: a robust planner with a C++ search core, then checking the weather-error assumptions against humidity measured on board airliners (IAGOS). See [Roadmap](#roadmap).
 
 ---
 
@@ -36,6 +36,10 @@ An independent case study using ERA5 atmospheric reanalysis, the open-source con
 **5. A robust plan is usually cheap, but not always available.** The worst-case choice cost no extra fuel on a median night for every mass, and at most 1.6–6.3%. A route clear of contrail conditions under every height error existed on only 16 of 24 nights (13 for a 72 t aircraft); when it existed it cost a median 0–1.5% extra fuel, up to about 7%.
 
 ![Exposure of the minimum-fuel route and cost of a robust route, by mass](results/figures/session8_mass_and_robust_cost.png)
+
+**6. A free-form route planner rarely beats the fixed route family.** A planner choosing any path through a grid of 25 lateral offsets × 9 flight levels × 60 stages found nothing better than the best of the 45 fixed routes on most nights (median gain 0). Freedom to change level helped heavier aircraft through step climbs (72 t: median 40 kg at λ = 1); large gains, up to ~1,900 kg fuel-equivalent at λ = 10, came from a few nights such as 1 January, when moist air sat at every level and only a long detour helped.
+
+![Planned paths on 2022-01-01 and the planner's gain on each night](results/figures/session9_planner.png)
 
 These results cover one city pair, one departure time and one year, and the weather-error sizes are assumptions, not measurements. Testing those sizes against real data is the next step.
 
@@ -67,6 +71,8 @@ candidate route (lateral offset, flight level)
   → objective J = fuel + λ × PCR distance, over weather-error scenarios
   → deterministic vs worst-case vs minimax-regret route choice
   → repeated on 24 nights
+  → route planner: dynamic programming over a stage × offset × flight-level grid,
+    every planned path re-flown through the steps above
 ```
 
 - **Routes:** the great circle and smooth lateral deviations of ±150 and ±300 km, at FL310–FL390 (45 routes). The set was fixed before any results were seen, so routes are not tuned to the data.
@@ -88,10 +94,11 @@ The project's own checks caught several errors; each is documented in the notebo
 | "Direct" route was not the shortest path | Left/right route lengths were asymmetric | Routes rebuilt around the great circle |
 | Fuel model used a fixed engine efficiency left by the contrail model | New fuel code disagreed with the old by up to 171 kg | Fixed; Sessions 4–6 decisions recomputed (none changed) |
 | Vertical shift also changed humidity | Physically implausible result | Relative humidity now moves with the air; covered by a test |
+| Route planner underestimated contrail distance by up to 308 km | Every planned path re-flown through the full pipeline | Planner re-times the weather along its own path and samples each step at 3 points; worst error now 70 km |
 
 Each new step is also checked against the previous one: the multi-night code reproduces the single-night results exactly before it is run on other nights.
 
-The package has **20 automated tests**, including PCR on artificial dry and supersaturated atmospheres, route geometry, the decision rules and the cache repair. They run on GitHub on every push (badge at the top); locally, run `python -m pytest`.
+The package has **51 automated tests**, including PCR on artificial dry and supersaturated atmospheres, route geometry, the decision rules, the cache repair, and the route planner checked against brute force over every possible path on small grids. They run on GitHub on every push (badge at the top); locally, run `python -m pytest`.
 
 ---
 
@@ -100,6 +107,7 @@ The package has **20 automated tests**, including PCR on artificial dry and supe
 - One city pair (synthetic endpoints), one departure time (00:00 UTC) and 24 nights of one year: too few for firm seasonal conclusions.
 - Cruise only: the extra fuel to climb to higher levels is not included, which favours high levels.
 - Constant true airspeed rather than constant Mach number; no wind.
+- The route planner's grid is limited to ±300 km, and its fuel per km does not fall as the aircraft gets lighter.
 - Scenario sizes are sensitivity cases, not calibrated estimates of ERA5 error, and are weighted equally. Only the vertical scenarios were repeated on all 24 nights.
 - PCR distance is a proxy for climate impact, not a radiative-forcing calculation.
 - ERA5 humidity is used unscaled in the base case; ERA5 is known to under-represent ice supersaturation.
@@ -114,12 +122,15 @@ The package has **20 automated tests**, including PCR on artificial dry and supe
 - [x] Robustness to humidity, position and timing errors (Sessions 5–6)
 - [x] Vertical resolution, vertical errors and aircraft mass (Session 7)
 - [x] The same analysis on 24 nights of 2022 (Session 8)
+- [x] Route planner over the airspace, compared with the fixed route set (Session 9)
+- [ ] Robust planner: a multi-objective search core in C++ (pybind11), validated against the Python planner and brute force (Session 10)
+- [ ] Robust planned routes under vertical weather errors on 24 nights, and a benchmark against the best Python version (Session 11)
 - [ ] How often does ERA5 miss ice supersaturation? A comparison with humidity measured on board airliners (IAGOS)
 - [ ] A statistical correction of ERA5 humidity giving a calibrated probability of ice supersaturation, compared with existing humidity scalings
 - [ ] Robust route choice with weather-error scenarios calibrated against those measurements
 - [ ] Short technical report
 
-**Future work, beyond this project:** a route planner that searches the airspace instead of a fixed route set; a contrail climate model (pycontrails' CoCiP) to turn λ into a physical quantity; ERA5's 10-member ensemble; wind, climb and real city pairs.
+**Future work, beyond this project:** a contrail climate model (pycontrails' CoCiP) to turn λ into a physical quantity; ERA5's 10-member ensemble; wind, climb and real city pairs.
 
 ---
 
@@ -127,7 +138,7 @@ The package has **20 automated tests**, including PCR on artificial dry and supe
 
 ```
 src/contrail_routing/      package: geometry, met (ERA5 loading and repair), evaluate (PCR),
-                           performance (fuel), scenarios, decisions, config
+                           performance (fuel), scenarios, decisions, planner, config
 tests/                     automated tests (pytest)
 notebooks/
   01_baseline_and_along_track_pcr.ipynb   Sessions 1-2
@@ -137,6 +148,7 @@ notebooks/
   05_position_errors.ipynb                Session 6
   06_vertical_and_mass.ipynb              Session 7 (and corrected Session 4-6 fuel)
   07_multiple_dates.ipynb                 Session 8: 24 nights of 2022
+  08_route_planner.ipynb                  Session 9: route planner vs the fixed route set
 scripts/download_era5_dates.py            downloads and checks ERA5 for the 24 nights
 results/                   CSV outputs per session; figures/ holds all figures
 ```

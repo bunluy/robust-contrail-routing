@@ -66,3 +66,57 @@ def make_route(origin, destination, offset_km, altitude_m, departure, speed_ms,
         time=pd.Timestamp(departure) + pd.to_timedelta(t_s, unit="s"),
         attrs={"flight_id": name},
     )
+
+
+
+def displaced_points(origin, destination, fraction, offset_km):
+    """
+    Points at a fraction (0 -> 1) along the great circle from origin to
+    destination, displaced sideways by offset_km (> 0 = left of travel), with
+    the same construction as make_route. fraction and offset_km broadcast.
+    Returns (lon, lat) arrays in degrees.
+    """
+    a, b = lonlat_to_xyz(*origin), lonlat_to_xyz(*destination)
+    omega = np.arccos(np.clip(a @ b, -1.0, 1.0))
+    s = np.asarray(fraction, dtype=float)[..., None]
+    p = (np.sin((1 - s) * omega) * a + np.sin(s * omega) * b) / np.sin(omega)
+    n = np.cross(a, b)
+    n /= np.linalg.norm(n)
+    delta = np.asarray(offset_km, dtype=float)[..., None] / R_EARTH_KM
+    return xyz_to_lonlat(np.cos(delta) * p + np.sin(delta) * n)
+
+
+def flight_from_path(lon, lat, altitude_m, departure, speed_ms, time_step_s=60, name="path"):
+    """
+    A Flight along a polyline of points (e.g. a planned path), flown at constant
+    speed_ms with one point every time_step_s seconds. Positions follow the
+    great-circle arc between consecutive points; altitude changes linearly
+    along each segment, so a level change happens gradually where it is planned.
+    """
+    lon, lat = np.asarray(lon, dtype=float), np.asarray(lat, dtype=float)
+    alt = np.asarray(altitude_m, dtype=float)
+    seg = haversine_km(lon[:-1], lat[:-1], lon[1:], lat[1:])
+    cum_km = np.concatenate([[0.0], np.cumsum(seg)])
+    duration_s = cum_km[-1] * 1000.0 / speed_ms
+    t_s = np.arange(0.0, duration_s, time_step_s)
+    if duration_s - t_s[-1] > 1.0:
+        t_s = np.append(t_s, duration_s)
+    d_km = t_s * speed_ms / 1000.0
+
+    i = np.clip(np.searchsorted(cum_km, d_km, side="right") - 1, 0, len(seg) - 1)
+    f = np.clip((d_km - cum_km[i]) / seg[i], 0.0, 1.0)[:, None]
+    xyz = lonlat_to_xyz(lon, lat)
+    a, b = xyz[i], xyz[i + 1]
+    omega = np.arccos(np.clip(np.sum(a * b, axis=1), -1.0, 1.0))[:, None]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        p = (np.sin((1 - f) * omega) * a + np.sin(f * omega) * b) / np.sin(omega)
+    p = np.where(omega > 1e-12, p, a)          # zero-length segment: stay put
+    lon_t, lat_t = xyz_to_lonlat(p)
+    return Flight(
+        longitude=lon_t,
+        latitude=lat_t,
+        altitude=alt[i] + f[:, 0] * (alt[i + 1] - alt[i]),
+        time=pd.Timestamp(departure) + pd.to_timedelta(t_s, unit="s"),
+        attrs={"flight_id": name},
+    )
+    
