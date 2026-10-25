@@ -12,4 +12,5 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: pip install -r requirements.txt
+      - run: pip install --no-build isolation ./cpp
       - run: python -m pytest
