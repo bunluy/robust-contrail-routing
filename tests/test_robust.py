@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from contrail_routing.planner import CostModel, path_costs, plan
-from contrail_routing.robust import contrail_core, robust_plan
+from contrail_routing.robust import contrail_core, robust_plan, robust_plan_timed
 
 needs_cpp = pytest.mark.skipif(contrail_core is None, reason="C++ core not built (pip install ./cpp)")
 ENGINES = ["python", pytest.param("cpp", marks=needs_cpp)]
@@ -74,8 +74,10 @@ def test_cpp_and_python_return_the_same_path(seed, rule):
     cpp_r = robust_plan(models, 3.0, rule=rule, engine="cpp")
     assert np.array_equal(py_r["j_idx"], cpp_r["j_idx"]) and np.array_equal(py_r["k_idx"], cpp_r["k_idx"])
     assert cpp_r["objective"] == pytest.approx(py_r["objective"], rel=1e-12)
-    for key in ("labels_created", "labels_pruned_by_bound", "labels_dominated"):
+    for key in ("labels_created", "labels_pruned_by_bound", "labels_dominated", "proved_by_bounds"):
         assert cpp_r[key] == py_r[key]                     # same algorithm, step for step
+    assert cpp_r["labels_created"] > 0                     # these grids exercise the full search
+    assert cpp_r["lower_bound_lagrangian"] <= cpp_r["objective"] + 1e-9
 
 
 @pytest.mark.parametrize("engine", ENGINES)
@@ -100,3 +102,45 @@ def test_mismatched_scenarios_are_refused():
     b = replace(b, fuel_per_km=b.fuel_per_km * 1.01)
     with pytest.raises(ValueError):
         robust_plan([a, b], 1.0)
+
+@pytest.mark.parametrize("engine", ENGINES)
+@pytest.mark.parametrize("rule", ["worst_case", "min_regret"])
+@pytest.mark.parametrize("seed", range(3))
+def test_warm_start_changes_nothing_but_the_work(engine, rule, seed):
+    models = scenario_models(seed, n=3, S=8, J=5, K=3)
+    cold = robust_plan(models, 3.0, rule=rule, engine=engine, warm_start=False)
+    warm = robust_plan(models, 3.0, rule=rule, engine=engine, warm_start=True)
+    assert warm["objective"] == pytest.approx(cold["objective"], rel=1e-12)
+    assert warm["warm_start_objective"] >= warm["objective"] - 1e-9     # constant level is never better
+    assert warm["labels_created"] <= cold["labels_created"]
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_label_limit_returns_a_certified_path(engine):
+    models = scenario_models(1, n=3, S=10, J=5, K=3)
+    exact = robust_plan(models, 3.0, engine=engine)
+    assert exact["stopped"] == "" and exact["gap"] == 0.0 and exact["labels_created"] > 5
+    r = robust_plan(models, 3.0, engine=engine, max_labels=5)
+    assert r["stopped"] == "label limit"
+    assert r["objective"] >= exact["objective"] - 1e-9                   # never better than the optimum
+    assert r["objective"] - r["gap"] <= exact["objective"] + 1e-9        # the gap really bounds it
+    c = [path_costs(m, r["j_idx"], r["k_idx"]) for m in models]          # the path has the reported cost
+    assert max(x["fuel_kg"] + 3.0 * x["pcr_km"] for x in c) == pytest.approx(r["objective"], rel=1e-12)
+
+
+def test_robust_plan_timed_stops_when_the_path_repeats():
+    models = scenario_models(2, n=3, S=8, J=5, K=3)
+    calls = []
+    def rebuild(delay):
+        calls.append(delay)
+        return models                                          # weather independent of delay here
+    r = robust_plan_timed(rebuild, models, 2.0, speed_ms=230.0)
+    assert r["converged"] and r["iterations"] == 2 and len(calls) == 1
+    assert r["objective"] == pytest.approx(robust_plan(models, 2.0)["objective"], rel=1e-12)
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_time_limit_returns_a_certified_path(engine):
+    models = scenario_models(1, n=3, S=10, J=5, K=3)
+    r = robust_plan(models, 3.0, engine=engine, max_seconds=-1.0)
+    assert r["stopped"] == "time limit" and r["gap"] >= 0.0
