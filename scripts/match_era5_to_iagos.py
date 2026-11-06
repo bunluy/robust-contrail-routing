@@ -20,8 +20,8 @@ stopped and resumed:
 - days are processed in a fixed random order, so if the run is stopped
   early the hours already matched are still spread over the whole year.
 
-IAGOS data stay outside the repository (their data policy restricts
-redistribution). Run from the repository root with the project's Python:
+IAGOS data stay outside the repository to keep it small (about 650 MB).
+Run from the repository root with the project's Python:
     python scripts/match_era5_to_iagos.py C:/Users/you/iagos_data
 """
 import gc
