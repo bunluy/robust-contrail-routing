@@ -4,15 +4,13 @@
 
 **How should an aircraft's cruise level and path be chosen to avoid creating persistent contrails, when the weather data behind that choice is uncertain, and what does planning for that uncertainty cost?**
 
-An independent case study using ERA5 atmospheric reanalysis, the open-source contrail model [pycontrails](https://py.contrails.org) and the Poll–Schumann aircraft performance model. It evaluates 45 candidate routes for an A320-class flight under 18 weather-error scenarios, compares deterministic and robust ways of choosing between them, plans routes that hold up under those errors with an exact search written in C++, and tests ERA5's humidity against measurements made on board airliners (IAGOS).
-
 **In brief**
 - **Method:** 45 candidate routes for an A320-class night flight, evaluated on 24 nights of 2022 with ERA5 reanalysis, the pycontrails contrail model and the Poll–Schumann fuel model; route choices that still work when the weather data is wrong; and ERA5 itself tested against 786,845 humidity measurements made on board airliners (IAGOS).
-- **Results:** cutting contrail-forming flight by at least 80% cost a median 1.2% extra fuel (0.05–4.8%, the 10 nights where it was needed and possible). ERA5 found 47% of the measured ice-supersaturated air (false alarm ratio 0.46). At 195–270 hPa, a one-number correction tested on unseen months raised the share found from 46% to 71% (false alarm ratio from 0.46 to 0.50), and it changed 79 of 288 route choices.
+- **Results:** cutting contrail-forming flight by at least 80% cost a median 1.2% extra fuel (0.05–4.8%, the 10 nights where it was needed and possible). ERA5 found 47% of the measured ice-supersaturated air (false alarm ratio 0.46). At 195–270 hPa, a one-number correction tested on unseen months raised the share found from 46% to 71% (false alarm ratio from 0.46 to 0.50), and it changed 79 of 288 route choices. Over 639 measured flights, a calibrated probability got the total contrail-forming distance right (96% of measured), where plain ERA5 found 85%, though no method was more accurate for single flights.
 - **Biggest caveat:** a simplified world: one synthetic city pair, cruise only, no wind, reanalysis rather than forecast data, and distance in contrail-forming air as a stand-in for climate impact.
-- **How it was made:** see [How this was made](#how-this-was-made).
+- **Who did what:** a self-directed learning project. The first two stages are my own code; later stages were written largely by an AI assistant to my direction. The questions, the decisions, and every run and check are mine ([details](#how-this-was-made)).
 
-> **Status:** Sessions 1–13 complete. One night (2022-03-01) studied in detail, the analysis repeated on 24 nights of 2022, a route planner compared with the fixed route set, an exact robust route search written in C++ run on all 24 nights, ERA5 checked against 786,845 humidity measurements from airliners (IAGOS), and ERA5's humidity corrected against those measurements. Next: robust routes using the measured corrections. See [Roadmap](#roadmap).
+> **Status:** Sessions 1–14 complete; next, a short technical report. See [Roadmap](#roadmap).
 
 ---
 
@@ -23,6 +21,8 @@ An independent case study using ERA5 atmospheric reanalysis, the open-source con
 **1. Persistent-contrail conditions at cruise levels are common, and their height changes from night to night.** Every night had persistent-contrail (PCR) conditions on at least one route. On all six summer nights they reached FL370 or higher; on no spring night did they rise above FL360; winter and autumn were mixed. Climbing is therefore not a universal fix: the great-circle route at FL390 was itself exposed on 6 nights.
 
 ![Exposure on the great-circle route by flight level and night](results/figures/session8_exposure_by_night.png)
+
+*Distance flown in persistent-contrail conditions on the great-circle route, by flight level (rows) and night (columns).*
 
 **2. Aircraft weight decides how often there is a trade-off.** Heavier aircraft cruise most efficiently lower down, closer to or inside the moist layer:
 
@@ -37,27 +37,45 @@ An independent case study using ERA5 atmospheric reanalysis, the open-source con
 
 ![Contrail exposure vs extra fuel, 2022-03-01 (Session 7 version: corrected fuel model, 5 ERA5 pressure levels)](results/figures/trade_off_fronts.png)
 
+*Contrail exposure against extra fuel for the 45 routes on 2022-03-01 (the Session 7 version of this figure: corrected fuel model, 5 ERA5 pressure levels; later sessions use 10).*
+
 **4. Uncertainty in the *height* of the moist layer changes route choices on most nights.** With the weather field shifted up or down by 150–600 m, deterministic, worst-case and minimum-regret rules chose different routes in 142 of 288 cases, on 19 of 24 nights. Where the worst-case choice differed from the deterministic one (135 cases), it typically spent about 20 kg more fuel to cut the worst-case contrail distance by about 110 km (medians). On 2022-03-01, height errors changed decisions far more often (9 of 12 cases) than uniform humidity errors (1 of 9) or horizontal and timing errors (1 of 18).
 
 **5. A robust plan is usually cheap, but not always available.** The worst-case choice cost no extra fuel on a median night for every mass, and at most 1.6–6.3%. A route clear of contrail conditions under every height error existed on only 16 of 24 nights (13 for a 72 t aircraft); when it existed it cost a median 0–1.5% extra fuel, up to about 7%.
 
 ![Exposure of the minimum-fuel route and cost of a robust route, by mass](results/figures/session8_mass_and_robust_cost.png)
 
+*Left: contrail exposure of the minimum-fuel route on each night, by aircraft mass. Right: extra fuel for the cheapest route that is clear in every height scenario (crosses: no such route).*
+
 **6. A free-form route planner rarely beats the fixed route family.** A planner choosing any path through a grid of 25 lateral offsets × 9 flight levels × 60 stages found nothing better than the best of the 45 fixed routes on most nights (median gain 0). Freedom to change level helped heavier aircraft through step climbs (72 t: median 40 kg at λ = 1); large gains, up to ~1,900 kg fuel-equivalent at λ = 10, came from a few nights such as 1 January, when moist air sat at every level and only a long detour helped.
 
 ![Planned paths on 2022-01-01 and the planner's gain on each night](results/figures/session9_planner.png)
+
+*Left: planned paths on 2022-01-01. Right: the planner's gain over the best fixed route on each night (kg fuel-equivalent).*
 
 **7. Planning against height errors beats the fixed routes, by small margins, and robustness is usually free.** An exact search for the path whose worst case over the seven height scenarios is best (C++ core) beat the fixed routes' worst-case choice at λ = 1 on 16–18 of 24 nights for 64–72 t aircraft (median 23–45 kg fuel-equivalent, under 1% of trip fuel) and on 7 nights for 56 t; it was worse on 1–2 nights per mass, by up to 76 kg. Against an ordinary plan for the unshifted ERA5 field, it cut worst-case contrail distance in 176 of 288 cases (median 55–117 km for 64–72 t) for a median 0.12% extra fuel, 69 of them at no extra fuel. 97% of the searches were solved exactly, half of them proved optimal by bounds alone; 16 of 576 hit the 2-minute limit and returned a path with a certified gap of 1.7–13.9% of fuel. "Exact" means exact on the planner's grid and its own cost estimate, and the search plans against height errors, which Session 12 later found are not ERA5's main weakness.
 
 ![Robust planned paths against the fixed routes, and the cost of robustness](results/figures/session11_robust_planner.png)
 
+*Left: gain of the worst-case planned path over the fixed routes' worst-case choice on each night, λ = 1 (mass codes: light_56t = 56 t, model_default ≈ 64 t, heavy_68t = 68 t, very_heavy_72t = 72 t). Right: extra fuel against the cut in worst-case contrail distance, worst-case plans vs ordinary plans.*
+
 **8. Measured on board airliners, ERA5's main weakness is humidity, not height.** Against 786,845 measurements from 833 IAGOS flights over the study region in 2022 (175–300 hPa), ERA5 found 47% of the ice-supersaturated air, and 46% of what it showed was not measured (equitable threat score 0.29; best in winter, 0.44). Where the air was supersaturated, ERA5's relative humidity over ice was a median 0.99 against a measured 1.10: usually close, but just below saturation. Moving the ERA5 field up or down did not improve the agreement on average; no shift was the most common best fit (30–39% of 10-minute blocks), while shifts of about 600 m fitted best in at most about 30% (an upper bound: that share also includes moist layers ERA5 shows that are not there). So the height scenarios of Sessions 7–11 are realistic in size, but equal weights overstate the 150–300 m errors, and the results point to a humidity correction mattering more than a height correction.
 
 ![ERA5 against IAGOS: scores by height shift, best-fitting shift, and humidity](results/figures/session12_era5_vs_iagos.png)
 
+*Left: hit rate and false alarm ratio of ERA5 ice supersaturation when the ERA5 field is moved up or down. Middle: which height shift agrees best with the measurements, against the equal weights assumed before. Right: ERA5 against measured relative humidity over ice.*
+
 **9. A one-number humidity correction finds far more of the supersaturated air and changes a quarter of route choices.** Tested on months it was not fitted to, calling ERA5 air supersaturated above 91% relative humidity over ice (instead of 100%) found 71% of the measured ice-supersaturated air instead of 46%, with the false alarm ratio rising only from 0.46 to 0.50 (ETS 0.35 against 0.28). The fitted value was 0.91–0.93 whichever month was left out, and lies inside the 85–95% range reported by Hildebrandt et al. (2026) for 2011–2022. A logistic model gave a probability that is reliable up to about 60% but no better yes/no answers. With the correction, contrail distance over the 45 routes rose 62%, and the lowest-cost route changed in 79 of 288 night × mass × λ cases (up to 11 of 24 nights for a 72 t aircraft). The plain-ERA5 choice would have flown up to 690 km through contrail conditions it did not see, while switching usually cost no extra fuel.
 
 ![Corrections on unseen months, reliability of the probability, and what the plain-ERA5 choice misses](results/figures/session13_correcting_humidity.png)
+
+*Left: skill of four ways of calling ERA5 air supersaturated, on unseen months. Middle: reliability of the probability (diagonal = perfect). Right: contrail distance the plain-ERA5 route choice misses if the corrected humidity is right, λ = 1 (mass codes as above).*
+
+**10. A calibrated probability is right on average, and planning on it changes most heavy-aircraft routes cheaply.** On 639 IAGOS flights, the probability's expected contrail-forming distance totalled 96% of what was measured (interval 87–108%), where plain ERA5 gave 85% and the 0.91 threshold 143%; for single flights none of the three was more accurate (mean error 60–66 km per flight, rank correlation 0.66–0.70). Planning on the expected distance, with eastbound flight levels (2,000 ft steps) and at most two level changes, changed 158 of 288 route choices, mostly for 64–72 t aircraft at λ = 1–10, cutting a median 21–94 km of expected contrail-forming flight for a median 2–58 kg of extra fuel. In 189 of 288 cases the plain-ERA5 route looked clean by its own measure but not by the probability's. The gain is reliable on average, over many flights, not for any single flight.
+
+![Predicted vs measured contrail distance on IAGOS flights, per-flight scores, and planning on the expected distance](results/figures/session14_planning_with_uncertainty.png)
+
+*Left: predicted against measured km in contrail-forming air for each IAGOS flight (cruise, 195–270 hPa), plain ERA5 and expected distance. Middle: per-flight scores with 95% intervals. Right: expected contrail distance cut by planning on the expected distance instead of plain ERA5, against extra fuel, λ = 1, each night and mass.*
 
 These results cover one city pair, one departure time and one year, and the corrections are fitted to four aircraft over one region.
 
@@ -95,17 +113,22 @@ candidate route (lateral offset, flight level)
     weather scenarios (C++ core, called from Python through pybind11), on 24 nights
   → ERA5 checked against IAGOS: the same steps evaluated at 786,845 points measured
     on board airliners, in the field as given and in every height-shifted field
+  → humidity corrected against IAGOS, and routes planned on the expected contrail
+    distance, checked against the distance measured on real flights
 ```
 
 - **Routes:** the great circle and smooth lateral deviations of ±150 and ±300 km, at FL310–FL390 (45 routes). The set was fixed before any results were seen, so routes are not tuned to the data.
 
 ![Humidity over ice at three cruise heights on 2022-03-01, 01:00 UTC, with the five lateral paths of the route family; black contours mark ice saturation](results/figures/session3_candidate_routes.png)
 
+*Relative humidity over ice at three cruise heights on 2022-03-01, 01:00 UTC, with the five lateral paths of the route family; black contours mark ice saturation (RHi = 1).*
+
 - **Uncertainty scenarios:** on 2022-03-01, 18 scenarios: humidity scaled by −5% to +11%; the whole weather field displaced 50–100 km sideways, 100 km along-track or 1 h in time; and moved 150–600 m up or down. On all 24 nights, the vertical shifts (the ones that changed decisions).
 - **λ** is the fuel (kg) an operator would spend to avoid 1 km of contrail-forming flight. It is kept as an explicit setting (0.1, 1, 10 kg/km) because converting contrail distance to climate impact needs a contrail climate model, which is future work.
 - **Robust search:** labels (partial paths) that are not beaten on fuel and on contrail distance in every scenario, pruned by a lower bound per scenario and a Lagrangian bound (a weighted average of the scenarios never exceeds the worst one). When the bounds meet, the path is proved optimal without searching; when a time limit is reached, the best path found is returned with a certified gap. A pure-Python copy of the same algorithm checks the C++ step for step.
 - **IAGOS comparison:** IAGOS-CORE L2 relative humidity over ice and temperature (every 4 s, quality-flagged good and final) inside the study region at 175–300 hPa, 2022. ERA5 is matched to each point through the route evaluation's own loader, levels, interpolation and PCR model; scores use whole flights as the independent units (bootstrap intervals). The rules were fixed in the notebook before any comparison was made.
 - **Humidity correction:** four ways of calling ERA5 air ice-supersaturated (RHi > 1, RHi > 0.97, a fitted threshold, and a logistic probability from ERA5's humidity 0–600 m above and below the point, temperature and pressure), each tested on months it was not fitted to (leave-one-month-out), with paired comparisons over whole flights. The fitted threshold is applied to the routes through pycontrails' constant humidity scaling.
+- **Planning with the probability:** the Session 9 planner minimises fuel + λ × expected contrail distance, the expected distance being ERA5's Schmidt–Appleman criterion times the Session 13 probability; restricted to FL330–FL390 (eastbound levels, 2,000 ft steps) with at most two level changes. The expected distance is checked first against the distance measured on IAGOS flights.
 - **Contrail metric:** distance in PCR conditions is a proxy for climate impact. It is more defensible here than in general because the flights are at night, when persistent contrails warm.
 
 ---
@@ -129,7 +152,7 @@ The IAGOS matching is checked by temperature: ERA5 and the measured temperature 
 
 Each new step is also checked against the previous one: the multi-night code reproduces the single-night results exactly before it is run on other nights.
 
-The package has **53 automated tests (112 test cases, counting repeated runs with different inputs)**, including PCR on artificial dry and supersaturated atmospheres, route geometry, the decision rules, the cache repair, the route planner checked against brute force over every possible path on small grids, and the C++ robust search checked against brute force, against a pure-Python version of the same algorithm, and for the validity of the gap it reports when stopped early, the IAGOS reading, quality filters and ERA5 matching on artificial files and atmospheres, and the calibration tools (including a check that a month's own measurements can never affect its out-of-month prediction). They run on GitHub on every push (badge at the top); locally, run `python -m pytest`.
+The package has **60 automated tests (143 test cases, counting repeated runs with different inputs)**, including PCR on artificial dry and supersaturated atmospheres, route geometry, the decision rules, the cache repair, the route planner checked against brute force over every possible path on small grids, and the C++ robust search checked against brute force, against a pure-Python version of the same algorithm, and for the validity of the gap it reports when stopped early, the IAGOS reading, quality filters and ERA5 matching on artificial files and atmospheres, the calibration tools (including a check that a month's own measurements can never affect its out-of-month prediction), and the probability-based planning (including the level-change limit against brute force). They run on GitHub on every push (badge at the top); locally, run `python -m pytest`.
 
 ---
 
@@ -138,8 +161,8 @@ The package has **53 automated tests (112 test cases, counting repeated runs wit
 - One city pair (synthetic endpoints), one departure time (00:00 UTC) and 24 nights of one year: too few for firm seasonal conclusions.
 - Cruise only: the extra fuel to climb to higher levels is not included, which favours high levels.
 - Constant true airspeed rather than constant Mach number; no wind.
-- ERA5 is a reanalysis, the best reconstruction of the weather after the fact, not the forecast a flight planner would have. Forecasts are less accurate, so these results are a best case for the weather data.
-- The planners may use every 1,000 ft level and change level often (91 of 576 robust plans change level five times or more in a two-hour cruise, up to 16 times), and charge nothing for descents. In practice eastbound flights are normally allocated alternate levels, level changes are limited, and the 2021 Maastricht trial used changes of up to 2,000 ft (Sausen et al., 2024).
+- ERA5 is a reanalysis, the best reconstruction of the weather after the fact, not the forecast a flight planner would have. Forecasts differ from it: ice supersaturation in forecasts and in ERA5 agrees only moderately point by point (an ETS of about 0.4 at short lead times, falling by about 0.1 per day; Dean et al., 2025), so these results are a best case for the weather data.
+- The planners of Sessions 9–11 may use every 1,000 ft level and change level often (91 of 576 robust plans change level five times or more in a two-hour cruise, up to 16 times), and charge nothing for descents; the Session 14 planner uses eastbound levels only, with at most two changes. In practice eastbound flights are normally allocated alternate levels, level changes are limited, and the 2021 Maastricht trial used changes of up to 2,000 ft (Sausen et al., 2024).
 - The route planner's grid is limited to ±300 km, and its fuel per km does not fall as the aircraft gets lighter. Robust searches are exact on that grid only; 16 of 576 stopped at the time limit with a certified gap of up to 13.9% of fuel.
 - Planned paths optimise the planner's own estimate, which differs from the full pipeline by up to 70 km of contrail distance; at λ = 10 this caused some of the cases where a planned path lost to a fixed route.
 - Scenario sizes are sensitivity cases weighted equally. The IAGOS comparison (Session 12) supports their range but not equal weights, and suggests ERA5's humidity errors near saturation matter more than its height errors; the routing does not yet use these findings. Only the vertical scenarios were repeated on all 24 nights.
@@ -162,8 +185,8 @@ The package has **53 automated tests (112 test cases, counting repeated runs wit
 - [x] Robust planned routes under vertical weather errors on 24 nights, and a benchmark against the pure-Python version (Session 11)
 - [x] How often does ERA5 miss ice supersaturation? A comparison with humidity measured on board airliners (IAGOS) (Session 12)
 - [x] A statistical correction of ERA5 humidity giving a calibrated probability of ice supersaturation, compared with existing humidity scalings, and its effect on route choices (Session 13)
-- [ ] Robust route choice with weather-error scenarios calibrated against those measurements
-- [ ] Short technical report
+- [x] Route planning on the measured probability of contrail conditions, checked against the distance measured on IAGOS flights (Session 14)
+- [ ] Short technical report (Session 15)
 
 **Future work, beyond this project:** a contrail climate model (pycontrails' CoCiP) to turn λ into a physical quantity; ERA5's 10-member ensemble; wind, climb and real city pairs.
 
@@ -175,7 +198,8 @@ The package has **53 automated tests (112 test cases, counting repeated runs wit
 src/contrail_routing/      package: geometry, met (ERA5 loading and repair), evaluate (PCR),
                            performance (fuel), scenarios, decisions, planner, robust,
                            iagos (reading IAGOS and matching ERA5), calibration (humidity
-                           corrections tested on unseen months), config
+                           corrections tested on unseen months), probabilistic (expected
+                           contrail distance for checking and planning), config
 cpp/                       C++ core of the robust search (robust_search.cpp) and its build files
 tests/                     automated tests (pytest)
 notebooks/
@@ -191,6 +215,7 @@ notebooks/
   10_robust_24_nights.ipynb               Session 11: robust planned routes on 24 nights
   11_era5_vs_iagos.ipynb                  Session 12: ERA5 checked against IAGOS measurements
   12_correcting_era5_humidity.ipynb       Session 13: humidity corrections and their effect on routes
+  13_planning_with_measured_uncertainty.ipynb  Session 14: the probability on real flights, and planning on it
 scripts/download_era5_dates.py            downloads and checks ERA5 for the 24 nights
 scripts/match_era5_to_iagos.py            matches ERA5 to every IAGOS measurement (resumable)
 results/                   CSV outputs per session (IAGOS: summary tables only); figures/ holds all figures
@@ -209,7 +234,7 @@ python -m venv .venv
 
 The first ERA5 download per configuration takes 10–20 minutes and is cached on disk afterwards; for notebooks 07–10, run `scripts/download_era5_dates.py` first (about 2 hours and 13 GB for the 24 nights). Notebook 10 then takes about 75 minutes and saves each night as it finishes, so it can be stopped and resumed. Keep the cache enabled: without it, converting ERA5's 137 model levels to pressure levels happens in memory and exceeds a typical laptop's RAM.
 
-For notebook 11, IAGOS data are needed; they are not included here, to keep the repository small (about 650 MB for 2022). Register at the [IAGOS Data Portal](https://iagos.aeris-data.fr/), then download IAGOS-CORE L2 time series in NetCDF for 2022-01-01 to 2023-01-01 over 40–60°N, 20°W–20°E (the optional ECMWF ancillary data must be left unticked, or the download fails). Put the files in `iagos_data` in your home folder (or set `IAGOS_DATA`) and run `scripts/match_era5_to_iagos.py <that folder>`: about 24 hours, resumable, deleting each ERA5 hour once matched. Notebook 12 then uses those matched points and the cached ERA5 of the 24 study nights (a few minutes).
+For notebook 11, IAGOS data are needed; they are not included here, to keep the repository small (about 650 MB for 2022). Register at the [IAGOS Data Portal](https://iagos.aeris-data.fr/), then download IAGOS-CORE L2 time series in NetCDF for 2022-01-01 to 2023-01-01 over 40–60°N, 20°W–20°E (the optional ECMWF ancillary data must be left unticked, or the download fails). Put the files in `iagos_data` in your home folder (or set `IAGOS_DATA`) and run `scripts/match_era5_to_iagos.py <that folder>`: about 24 hours, resumable, deleting each ERA5 hour once matched. Notebooks 12 and 13 then use those matched points and the cached ERA5 of the 24 study nights (a few minutes each).
 
 ---
 
@@ -220,6 +245,7 @@ This project is a small, transparent case study, not a new method: each of its s
 - **ERA5 against airliner humidity.** Gierens et al. (2020) found contrail formation predictable from ERA5 but persistence much less so; Reutter et al. (2020) found ERA-Interim underestimates ice supersaturation in number and strength; Hildebrandt et al. (2026), over 2011–2022 and eight regions, found an ETS of 0.2–0.4 and that lowering ERA5's threshold helps most between 85% and 95%, with the best value varying by region, season and distance from the tropopause; Driver et al. (2025) showed the errors follow the weather situation around depressions, and that a 90% threshold roughly doubles the share of measured ice supersaturation found for a few points of precision.
 - **Correcting ERA5's humidity.** Antonopoulos et al. (2026) trained a machine-learning correction on IAGOS data over the North Atlantic in 2022, raising ETS from 0.36 to 0.44.
 - **Planning routes under weather uncertainty.** Simorgh et al. (2023, 2024) planned climate-optimal trajectories that are robust to forecast uncertainty from weather ensembles; Hanst et al. (2025) built ensemble forecasts of ice supersaturation, verified against radiosondes and IAGOS, that have been used to reroute flights in an avoidance trial.
+- **Risk and uncertainty in avoidance decisions.** Platt et al. (2024) propagated humidity and model uncertainty through a contrail model and found per-flight predictions still clearly better than climatology; Borella et al. (2026) showed that, with ensemble forecasts, 55% of reroutings planned on a best estimate carry more than a 5% risk of harming the climate, and argued that risk belongs in avoidance decisions.
 - **Avoidance in practice.** The 2021 Maastricht trial changed flight levels by up to 2,000 ft and found avoidance successful on average (Sausen et al., 2024).
 
 Where this project overlaps with these studies, its results agree: ERA5's ETS of about 0.3, a best threshold near 0.9, and lowered thresholds finding far more supersaturated air at a small cost in false alarms. What it adds is one end-to-end chain, from measured humidity to the route a flight would choose, with every step checked and its limits stated.
@@ -228,13 +254,16 @@ Where this project overlaps with these studies, its results agree: ERA5's ETS of
 
 ## References
 
+- Borella, A., Steer, C., Bellouin, N., & Boucher, O. (2026). Concept of risk-aware contrail avoidance strategies. *Journal of Environmentally Compatible Air Transport System*, 1, 3. https://jecats.copernicus.org/articles/1/3/2026/
 - Antonopoulos, M., Juvin-Quarroz, J., & Boucher, O. (2026). Technical note: Hybrid machine learning model for bias correction of UTLS relative humidity against IAGOS observations in ERA5 reanalysis. *Atmospheric Chemistry and Physics*. https://doi.org/10.5194/acp-26-4771-2026
 - Driver, O. G. A., Stettler, M. E. J., & Gryspeerdt, E. (2025). The ice supersaturation biases limiting contrail modelling are structured around extratropical depressions. *Atmospheric Chemistry and Physics*. https://doi.org/10.5194/acp-25-16411-2025
+- Dean, T. R., Abbott, T. H., Engberg, Z., Masson, N., Teoh, R., Itcovitz, J. P., Stettler, M. E. J., & Shapiro, M. L. (2025). Impact of forecast stability on navigational contrail avoidance. arXiv:2507.13529 (preprint). https://arxiv.org/abs/2507.13529
 - Gierens, K., Matthes, S., & Rohs, S. (2020). How well can persistent contrails be predicted? *Aerospace*, 7(12), 169. https://doi.org/10.3390/aerospace7120169
 - Hanst, M., Köhler, C. G., Seifert, A., & Schlemmer, L. (2025). Predicting ice supersaturation for contrail avoidance: ensemble forecasting using ICON with two-moment ice microphysics. *Atmospheric Chemistry and Physics*, 25, 17253–17274. https://doi.org/10.5194/acp-25-17253-2025
 - Hersbach, H. et al. (2020). The ERA5 global reanalysis. *Quarterly Journal of the Royal Meteorological Society*, 146, 1999–2049.
 - Hildebrandt, K. G., Castino, F., Meijer, V., & Yin, F. (2026). Variability of ice supersaturated regions at flight altitudes: evaluation of ERA5 reanalysis using IAGOS in situ measurements. *Atmospheric Chemistry and Physics*. https://doi.org/10.5194/acp-26-6449-2026
 - Lee, D. S. et al. (2021). The contribution of global aviation to anthropogenic climate forcing for 2000 to 2018. *Atmospheric Environment*, 244, 117834.
+- Platt, J., Shapiro, M., Engberg, Z., McCloskey, K., Geraedts, S., Sankar, T., Stettler, M. E. J., Teoh, R., Schumann, U., Rohs, S., Brand, E., & Van Arsdale, C. (2024). The effect of uncertainty in humidity and model parameters on the prediction of contrail energy forcing. *Environmental Research Communications*, 6, 095015.
 - Poll, D. I. A. and Schumann, U. (2021). An estimation method for the fuel burn and other performance characteristics of civil transport aircraft in the cruise. *The Aeronautical Journal*, 125.
 - Reutter, P., Neis, P., Rohs, S., & Sauvage, B. (2020). Ice supersaturated regions: properties and validation of ERA-Interim reanalysis with IAGOS in situ water vapour measurements. *Atmospheric Chemistry and Physics*, 20. https://doi.org/10.5194/acp-20-787-2020
 - Sausen, R., Hofer, S., Gierens, K., Bugliaro, L., Ehrmanntraut, R., Sitova, I., Walczak, K., Burridge-Diesing, A., Bowman, M., & Miller, N. (2024). Can we successfully avoid persistent contrails by small altitude adjustments of flights in the real world? *Meteorologische Zeitschrift*, 33(1), 83–98. https://doi.org/10.1127/metz/2023/1157
@@ -256,7 +285,7 @@ Where this project overlaps with these studies, its results agree: ERA5's ETS of
 
 ## How this was made
 
-I started this project to learn scientific programming on a real aerospace problem. The first two stages (the baseline contrail calculation) are my own code. From the third stage on, the code was written in collaboration with an AI assistant, which wrote most of it to my direction; I typed out and worked through much of it by hand to understand it.
+I started this project to learn scientific programming on a real aerospace problem. The first two stages (the baseline contrail calculation) are my own code; my original working notebook is in the history at [commit 4dc80b2](https://github.com/bunluy/robust-contrail-routing/blob/4dc80b2/notebooks/01_pycontrails_hello_world.ipynb). From the third stage on, the code was written in collaboration with an AI assistant, which wrote most of it to my direction; I typed out and worked through much of it by hand to understand it.
 
 My part was the direction and the judgement: choosing the question and where to take it next (repeating it over 24 nights, planning for weather uncertainty, the C++ core, and testing ERA5 against airliner measurements), applying for and handling the IAGOS data, running every analysis on my own laptop, questioning results that looked wrong, and deciding what to fix, keep and report. The errors caught along the way are listed under [Checks and corrections](#checks-and-corrections).
 
@@ -264,5 +293,5 @@ My part was the direction and the judgement: choosing the question and where to 
 
 ## Author
 
-Independent project by Baris Unluyildiz, BEng Aerospace Engineering student at the University of Manchester.
+Self-directed project by Baris Unluyildiz, BEng Aerospace Engineering student at the University of Manchester.
 [LinkedIn](https://www.linkedin.com/in/baris-unluyildiz/) · Released under the MIT License.
