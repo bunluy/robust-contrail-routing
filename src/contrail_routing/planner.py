@@ -93,9 +93,12 @@ class CostModel:
         return int(np.flatnonzero(self.offsets_km == 0)[0])
 
 
-def edge_pcr_fraction(met, origin, destination, offsets_km, flight_levels, times, max_dj, max_dk, n_sub=3):
+def edge_pcr_fraction(met, origin, destination, offsets_km, flight_levels, times, max_dj, max_dk, n_sub=3,
+                      point_fn=None):
     """Share of n_sub points along every edge that are in PCR, shape (S-1, J, 2*max_dj+1, K, 2*max_dk+1).
-    Edges leaving the grid get 0 (they are never used: their length is inf)."""
+    Edges leaving the grid get 0 (they are never used: their length is inf).
+    point_fn(lon, lat, altitude_m, time) may replace the 0/1 PCR value of each point by any
+    value in [0, 1], e.g. a probability; the default is pcr_at_points on met."""
     S, J, K = len(times), len(offsets_km), len(flight_levels)
     step = float(offsets_km[1] - offsets_km[0]) if J > 1 else 0.0
     alt = flight_level_to_m(np.asarray(flight_levels, dtype=float))
@@ -119,12 +122,14 @@ def edge_pcr_fraction(met, origin, destination, offsets_km, flight_levels, times
     frac, offset, altitude, t_ns = (np.broadcast_to(a, shape) for a in (frac, offset, altitude, t_ns))
     lon, lat = displaced_points(origin, destination, frac, offset)
     time = times[0] + t_ns.astype("timedelta64[ns]")
-    return pcr_at_points(met, lon, lat, altitude, time).mean(axis=-1)
+    if point_fn is None:
+        return pcr_at_points(met, lon, lat, altitude, time).mean(axis=-1)
+    return np.asarray(point_fn(lon, lat, altitude, time), dtype=float).mean(axis=-1)
 
 
 def build_cost_model(met, origin, destination, departure, speed_ms, n_stages,
                      offsets_km, flight_levels, fuel_per_km, climb_kg,
-                     max_dj=1, max_dk=1, delay_s=None, n_sub=3):
+                     max_dj=1, max_dk=1, delay_s=None, n_sub=3, point_fn=None):
     offsets_km = np.asarray(offsets_km, dtype=float)
     flight_levels = np.asarray(flight_levels)
     if not np.any(offsets_km == 0):
@@ -140,7 +145,7 @@ def build_cost_model(met, origin, destination, departure, speed_ms, n_stages,
         js = np.arange(max(0, -dj), min(J, J - dj))
         edge[:, js, i] = haversine_km(lon[:-1, js], lat[:-1, js], lon[1:, js + dj], lat[1:, js + dj])
     pcr_frac = edge_pcr_fraction(met, origin, destination, offsets_km, flight_levels, times,
-                                 max_dj, max_dk, n_sub)
+                                 max_dj, max_dk, n_sub, point_fn)
     return CostModel(lon, lat, offsets_km, flight_levels, times, edge, pcr_frac,
                      np.asarray(fuel_per_km, dtype=float), float(climb_kg), max_dj, max_dk)
 
@@ -164,14 +169,18 @@ def _moves(m):
     return [0] + [d for a in range(1, m + 1) for d in (-a, a)]
 
 
-def plan(cm, lam, max_dk=None):
+def plan(cm, lam, max_dk=None, max_changes=None):
     """
     Minimum-J path from (0, j0) to (S-1, j0). max_dk=0 holds the flight level
-    constant (still chosen freely). Returns a dict with the path and its costs.
+    constant (still chosen freely). max_changes, if given, limits the number of
+    stages at which the flight level changes. Returns a dict with the path and
+    its costs.
     """
     max_dk = cm.max_dk if max_dk is None else max_dk
     if max_dk > cm.max_dk:
         raise ValueError("max_dk larger than the cost model was built for")
+    if max_changes is not None:
+        return _plan_limited(cm, lam, max_dk, int(max_changes))
     S, J, K = cm.shape
     flyable = np.isfinite(cm.fuel_per_km)
     cost = np.full((J, K), np.inf)
@@ -213,6 +222,58 @@ def plan(cm, lam, max_dk=None):
     return out
 
 
+def _plan_limited(cm, lam, max_dk, max_changes):
+    """plan() with at most max_changes level changes: the same search with the
+    number of changes so far as an extra state. Same tie-break order."""
+    S, J, K = cm.shape
+    C = max_changes + 1
+    flyable = np.isfinite(cm.fuel_per_km)
+    cost = np.full((J, K, C), np.inf)
+    cost[cm.j0, flyable, 0] = 0.0
+    prev_j = np.zeros((S, J, K, C), dtype=np.int64)
+    prev_k = np.zeros((S, J, K, C), dtype=np.int64)
+    prev_c = np.zeros((S, J, K, C), dtype=np.int64)
+    for s in range(S - 1):
+        new = np.full((J, K, C), np.inf)
+        for dj in _moves(cm.max_dj):
+            L = cm.edge_km[s, :, dj + cm.max_dj][:, None, None]                     # (J, 1, 1)
+            js = np.arange(max(0, -dj), min(J, J - dj))
+            for dk in (_moves(max_dk) if s < S - 2 else [0]):
+                with np.errstate(invalid="ignore"):
+                    leave = cost + L * (cm.fuel_per_km[None, :, None]
+                                        + lam * cm.pcr_frac[s, :, dj + cm.max_dj, :, dk + cm.max_dk][:, :, None])
+                ks = np.arange(max(0, -dk), min(K, K - dk))
+                dc = 1 if dk != 0 else 0
+                cs = np.arange(0, C - dc)
+                cand = leave[np.ix_(js, ks, cs)] + cm.climb_kg * max(dk, 0)
+                tj, tk, tc = np.ix_(js + dj, ks + dk, cs + dc)
+                better = cand < new[tj, tk, tc]
+                new[tj, tk, tc] = np.where(better, cand, new[tj, tk, tc])
+                shp = better.shape
+                prev_j[s + 1][tj, tk, tc] = np.where(better, np.broadcast_to(js[:, None, None], shp), prev_j[s + 1][tj, tk, tc])
+                prev_k[s + 1][tj, tk, tc] = np.where(better, np.broadcast_to(ks[None, :, None], shp), prev_k[s + 1][tj, tk, tc])
+                prev_c[s + 1][tj, tk, tc] = np.where(better, np.broadcast_to(cs[None, None, :], shp), prev_c[s + 1][tj, tk, tc])
+        new[:, ~flyable, :] = np.inf
+        cost = new
+    end = cost[cm.j0]                                                               # (K, C)
+    k_end, c_end = np.unravel_index(int(np.argmin(end)), end.shape)
+    if not np.isfinite(end[k_end, c_end]):
+        raise ValueError("no feasible path")
+    j_idx, k_idx, c = [cm.j0], [int(k_end)], int(c_end)
+    for s in range(S - 1, 0, -1):
+        j, k = j_idx[-1], k_idx[-1]
+        j_idx.append(int(prev_j[s, j, k, c]))
+        k_idx.append(int(prev_k[s, j, k, c]))
+        c = int(prev_c[s, j, k, c])
+    j_idx, k_idx = np.array(j_idx[::-1]), np.array(k_idx[::-1])
+    out = path_costs(cm, j_idx, k_idx)
+    out.update({"J": out["fuel_kg"] + lam * out["pcr_km"], "J_search": float(end[k_end, c_end]),
+                "j_idx": j_idx, "k_idx": k_idx,
+                "offset_km": cm.offsets_km[j_idx], "flight_level": cm.flight_levels[k_idx],
+                "lon": cm.lon[np.arange(S), j_idx], "lat": cm.lat[np.arange(S), j_idx]})
+    return out
+
+
 def path_delay_s(cm, j_idx, speed_ms):
     """Delay at each stage boundary of a path, relative to great-circle progress."""
     j_idx = np.asarray(j_idx)
@@ -223,17 +284,17 @@ def path_delay_s(cm, j_idx, speed_ms):
     return (cum - gc_cum) * 1000.0 / speed_ms
 
 
-def plan_timed(rebuild, cm, lam, speed_ms, max_dk=None, max_iter=5):
+def plan_timed(rebuild, cm, lam, speed_ms, max_dk=None, max_iter=5, max_changes=None):
     """
     Plan, then re-evaluate the contrail field with the planned path's delay and
     re-plan, until the path repeats (converged) or max_iter plans were made.
     rebuild(delay_s) must return a CostModel for those delays (same grid).
     Returns the final plan with 'iterations' and 'converged' added.
     """
-    p = plan(cm, lam, max_dk)
+    p = plan(cm, lam, max_dk, max_changes)
     for it in range(2, max_iter + 1):
         cm = rebuild(path_delay_s(cm, p["j_idx"], speed_ms))
-        q = plan(cm, lam, max_dk)
+        q = plan(cm, lam, max_dk, max_changes)
         if np.array_equal(q["j_idx"], p["j_idx"]) and np.array_equal(q["k_idx"], p["k_idx"]):
             q.update(iterations=it, converged=True)
             return q

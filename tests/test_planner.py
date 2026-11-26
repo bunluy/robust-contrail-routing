@@ -29,7 +29,7 @@ def random_model(seed, S=6, J=5, K=3, max_dj=1, max_dk=1, unflyable=()):
                      pcr_frac=pcr_frac, fuel_per_km=fuel, climb_kg=15.0, max_dj=max_dj, max_dk=max_dk)
 
 
-def brute_force(cm, lam, max_dk):
+def brute_force(cm, lam, max_dk, max_changes=None):
     """Minimum J over every allowed path, by enumeration (level held on the final segment, as in plan)."""
     S, J, K = cm.shape
     best = np.inf
@@ -39,7 +39,8 @@ def brute_force(cm, lam, max_dk):
             continue
         for k_idx in itertools.product(range(K), repeat=S):
             if (np.abs(np.diff(k_idx)).max() > max_dk or k_idx[-1] != k_idx[-2]
-                    or not np.isfinite(cm.fuel_per_km[list(k_idx)]).all()):
+                    or not np.isfinite(cm.fuel_per_km[list(k_idx)]).all()
+                    or (max_changes is not None and np.count_nonzero(np.diff(k_idx)) > max_changes)):
                 continue
             c = path_costs(cm, j_idx, k_idx)
             best = min(best, c["fuel_kg"] + lam * c["pcr_km"])
@@ -123,3 +124,21 @@ def test_plan_timed_stops_when_the_path_repeats():
     p = plan_timed(rebuild, cm, lam=1.0, speed_ms=230.0)
     assert p["converged"] and p["iterations"] == 2 and len(calls) == 1
     assert p["J"] == pytest.approx(plan(cm, 1.0)["J"])
+
+@pytest.mark.parametrize("seed", range(4))
+@pytest.mark.parametrize("lam", [1.0, 10.0])
+@pytest.mark.parametrize("max_changes", [0, 1, 2])
+def test_limited_level_changes_match_brute_force(seed, lam, max_changes):
+    cm = random_model(seed, S=6, J=3, K=3, unflyable=(2,) if seed == 3 else ())
+    p = plan(cm, lam, max_changes=max_changes)
+    assert p["J"] == pytest.approx(brute_force(cm, lam, 1, max_changes), rel=1e-12)
+    assert p["J"] == pytest.approx(p["J_search"], rel=1e-12)
+    assert p["level_changes"] <= max_changes
+
+
+def test_a_generous_limit_changes_nothing():
+    for seed in range(3):
+        cm = random_model(seed, S=8, J=5, K=3)
+        a, b = plan(cm, 3.0), plan(cm, 3.0, max_changes=7)
+        assert a["J"] == pytest.approx(b["J"], rel=1e-12)
+        assert np.array_equal(a["k_idx"], b["k_idx"]) and np.array_equal(a["j_idx"], b["j_idx"])
